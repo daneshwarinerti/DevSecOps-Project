@@ -33,7 +33,7 @@ jobs:
           pip install pytest
 
       - name: Dependency vulnerability scan
-        run: python3 -m pip_audit
+        run: python -m pip_audit
       
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2
