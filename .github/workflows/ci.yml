@@ -9,6 +9,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -49,3 +53,22 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "1"
           ignore-unfixed: true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::552823821096:role/GitHubActions-ECR-DevSecOps
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag Docker image
+        run: |
+          docker tag devsecops-app:${{ github.sha }} \
+            ${{ steps.login-ecr.outputs.registry }}/devsecops-project:${{ github.sha }}
+
+      - name: Push Docker image to ECR
+        run: |
+          docker push ${{ steps.login-ecr.outputs.registry }}/devsecops-project:${{ github.sha }}
