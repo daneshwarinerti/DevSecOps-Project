@@ -84,3 +84,69 @@ jobs:
       - name: Push Docker image to ECR
         run: |
           docker push ${{ steps.login-ecr.outputs.registry }}/devsecops-project:${{ github.sha }}
+
+      - name: Download current ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition devsecops-app \
+            --query taskDefinition > task-definition.json
+
+      - name: Update ECS task definition with new image
+        run: |
+          IMAGE="${{ steps.login-ecr.outputs.registry }}/devsecops-project:${{ github.sha }}"
+
+          python - <<'PY'
+          import json
+          import os
+
+          image = os.environ["IMAGE"]
+
+          with open("task-definition.json") as f:
+              task = json.load(f)
+
+          for container in task["containerDefinitions"]:
+              if container["name"] == "devsecops-app":
+                  container["image"] = image
+
+          fields_to_remove = [
+              "taskDefinitionArn",
+              "revision",
+              "status",
+              "requiresAttributes",
+              "compatibilities",
+              "registeredAt",
+              "registeredBy"
+          ]
+
+          for field in fields_to_remove:
+              task.pop(field, None)
+
+          with open("task-definition-new.json", "w") as f:
+              json.dump(task, f)
+
+          print(f"Updated image to: {image}")
+          PY
+
+      - name: Register new ECS task definition
+        run: |
+          aws ecs register-task-definition \
+            --cli-input-json file://task-definition-new.json \
+            --query "taskDefinition.taskDefinitionArn" \
+            --output text > task-definition-arn.txt
+
+      - name: Deploy new task definition to ECS
+        run: |
+          TASK_DEFINITION=$(cat task-definition-arn.txt)
+
+          aws ecs update-service \
+            --cluster devsecops-cluster \
+            --service devsecops-service \
+            --task-definition "$TASK_DEFINITION"
+
+      - name: Wait for ECS deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster devsecops-cluster \
+            --services devsecops-service
+
+    
